@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>ITT NewsCentral — Local Composer (No GAS / No Token)</title>
+  <script>window.tailwind={config:{darkMode:'class'}};</script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root{--bg:#0b1220;--panel:#0f172a;--muted:#94a3b8;--text:#e5e7eb;--accent:#1f6feb;--ok:#22c55e;--warn:#f59e0b;--danger:#ef4444}
+    html,body,#app{height:100%}
+    body{background:var(--bg);color:var(--text)}
+    .card{background:var(--panel);border:1px solid #1f2937;border-radius:1rem}
+    .btn{border:1px solid #334155;padding:.5rem .9rem;border-radius:.75rem;background:#1e293b;color:var(--text);transition:all .12s ease}
+    .btn:hover{border-color:#4b607d;background:#334155}
+    .btn-ghost{background:transparent}
+    .badge{border:1px solid #334155;border-radius:.5rem;padding:.1rem .4rem}
+    .grid-cols-editor{grid-template-columns: 1.4fr 2.6fr 1.8fr 1.1fr 0.8fr 1.2fr 0.8fr}
+    /* OBS preview safe canvas */
+    .obs-safe{width:1920px;height:1080px;transform-origin: top left}
+    .scale-preview{transform:scale(.5)}
+    /* ticker */
+    @keyframes scrollX {0%{transform: translateX(0)}100%{transform: translateX(-50%)}}
+    .ticker-rail{white-space:nowrap}
+    .ticker-run{display:inline-block;padding-right:6rem}
+    /* slide fade */
+    .slide{position:absolute;inset:0;opacity:0;transition:opacity .6s ease}
+    .slide.active{opacity:1}
+    /* lower third */
+    .lt{position:absolute;left:0;right:0;bottom:0;height:220px;padding:16px}
+    .lt-box{position:relative;border-radius:16px;padding:16px 20px}
+    .lt-title{font-weight:800;font-size:40px;line-height:1.1}
+    .lt-sub{font-size:22px;opacity:.9}
+    /* drag ghost */
+    .drag-row{cursor:grab}
+    .drag-over{outline:2px dashed #60a5fa; outline-offset:-2px}
+    /* tests */
+    .test-pass{color:#22c55e}
+    .test-fail{color:#ef4444}
+  </style>
+</head>
+<body class="min-h-screen">
+<div id="app" class="h-full">
+  <header class="sticky top-0 z-10 backdrop-blur bg-[rgba(11,18,32,0.7)] border-b border-slate-800">
+    <div class="max-w-screen-2xl mx-auto p-3 flex items-center gap-2">
+      <h1 class="text-xl font-bold tracking-wide">ITT NewsCentral — Local Composer <span class="text-xs opacity-70">(No GAS / No Token)</span></h1>
+      <span class="ml-2 badge text-slate-300">v2025.10.23d</span>
+      <div class="flex-1"></div>
+      <button id="btnFetchAll" class="btn" type="button">Fetch All</button>
+      <button id="btnBuildQueues" class="btn" type="button">Build Queues</button>
+      <button id="btnExportSlides" class="btn" type="button">Export Slides HTML</button>
+      <button id="btnSettings" class="btn" type="button">Settings</button>
+    </div>
+  </header>
+
+  <main class="max-w-screen-2xl mx-auto p-4 grid lg:grid-cols-2 gap-4">
+    <!-- LEFT: Feeds + Editor -->
+    <section class="card p-4 space-y-4">
+      <div class="flex items-center gap-2">
+        <h2 class="font-semibold text-lg">Feeds</h2>
+        <span class="text-sm text-slate-400">Add RSS or JSON. Runs from file:/// with optional proxy.</span>
+        <div class="flex-1"></div>
+        <button id="btnAddFeed" class="btn btn-ghost" type="button">+ Add Feed</button>
+        <button id="btnSaveFeeds" class="btn" type="button">Save</button>
+      </div>
+      <div>
+        <table class="w-full text-sm">
+          <thead class="text-slate-300">
+            <tr class="text-left">
+              <th class="p-2">Source</th>
+              <th class="p-2">Type</th>
+              <th class="p-2">URL</th>
+              <th class="p-2">Enabled</th>
+              <th class="p-2">Category</th>
+              <th class="p-2">—</th>
+            </tr>
+          </thead>
+          <tbody id="feedsBody"></tbody>
+        </table>
+      </div>
+
+      <div class="mt-4 flex items-center gap-2">
+        <h2 class="font-semibold text-lg">Editor / Tuner</h2>
+        <input id="searchInput" type="search" placeholder="Search title/summary…" class="ml-2 px-3 py-2 rounded bg-slate-900 border border-slate-700 w-64" />
+        <div class="flex-1"></div>
+        <span class="text-sm text-slate-400"><span id="countItems">0</span> items</span>
+      </div>
+      <div class="border border-slate-700 rounded-lg overflow-hidden">
+        <div class="grid grid-cols-editor bg-slate-900 text-xs uppercase tracking-wide text-slate-400">
+          <div class="p-2">Title</div>
+          <div class="p-2">Summary</div>
+          <div class="p-2">Media (img, video, audio)</div>
+          <div class="p-2">Weight</div>
+          <div class="p-2">Enable</div>
+          <div class="p-2">Template</div>
+          <div class="p-2">Drag</div>
+        </div>
+        <div id="editorList" class="divide-y divide-slate-800 max-h-[38vh] overflow-auto"></div>
+      </div>
+
+      <!-- Template Manager -->
+      <div class="card p-3">
+        <div class="flex items-center gap-2 mb-2">
+          <h3 class="font-semibold">Template Manager</h3>
+          <span class="text-xs text-slate-400">Save / load slide presets (template + defaults).</span>
+          <div class="flex-1"></div>
+          <button id="btnSavePreset" class="btn" type="button">Save Preset</button>
+          <button id="btnApplyPresetAll" class="btn btn-ghost" type="button">Apply to Visible</button>
+        </div>
+        <div class="grid md:grid-cols-2 gap-2">
+          <label class="block text-sm">Preset Name
+            <input id="presetName" class="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700" placeholder="e.g., Headline + BG" />
+          </label>
+          <label class="block text-sm">Select Preset
+            <select id="presetSelect" class="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700"></select>
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Preview + Lower Third Designer -->
+    <section class="card p-4 space-y-4">
+      <div class="flex items-center gap-2">
+        <h2 class="font-semibold text-lg">OBS Preview</h2>
+        <span class="text-sm text-slate-400">Scaled 50% (1920×1080)</span>
+        <div class="flex-1"></div>
+        <button id="btnPreviewStart" class="btn" type="button">Start</button>
+        <button id="btnPreviewStop" class="btn btn-ghost" type="button">Stop</button>
+        <button id="btnEnableAudio" class="btn btn-ghost" type="button" title="Enable media audio for browser autoplay policies">Enable Audio</button>
+      </div>
+      <div class="relative overflow-auto">
+        <div class="obs-safe scale-preview border border-slate-800 rounded-lg bg-black" id="previewCanvas">
+          <!-- slides & lower third added dynamically -->
+          <div id="previewSlides" class="w-full h-full relative"></div>
+          <div id="previewLowerThird" class="lt pointer-events-none"></div>
+          <div class="absolute left-0 right-0 bottom-0">
+            <div class="bg-slate-900/90 border-t border-slate-700 overflow-hidden">
+              <div id="ticker" class="ticker-rail text-slate-100 text-xl py-1"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pt-2">
+        <h3 class="font-semibold mb-2">Lower-Third Designer</h3>
+        <div class="grid md:grid-cols-2 gap-3">
+          <div class="space-y-2">
+            <label class="block text-sm">Title
+              <input id="ltTitle" class="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700" placeholder="Headline" />
+            </label>
+            <label class="block text-sm">Subtitle
+              <input id="ltSub" class="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700" placeholder="Details" />
+            </label>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="block text-sm">BG
+                <input id="ltBg" type="color" value="#001b3f" class="w-full h-10 border border-slate-700 rounded" />
+              </label>
+              <label class="block text-sm">Accent
+                <input id="ltAccent" type="color" value="#1f6feb" class="w-full h-10 border border-slate-700 rounded" />
+              </label>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="block text-sm">Text Color
+                <input id="ltColor" type="color" value="#e5e7eb" class="w-full h-10 border border-slate-700 rounded" />
+              </label>
+              <label class="block text-sm">Opacity
+                <input id="ltOpacity" type="range" min="0" max="100" value="92" class="w-full" />
+              </label>
+            </div>
+            <button id="btnApplyLT" class="btn" type="button">Apply</button>
+          </div>
+          <div class="text-sm text-slate-300">
+            <p class="opacity-80">This lower-third is rendered locally in the preview and exported with your slideshow HTML.</p>
+            <p class="opacity-80 mt-2">Tip: Keep titles short (~50–80 chars). Subtitle can hold counties, exp times, etc.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FULL-WIDTH: Logs -->
+    <section class="card p-4 lg:col-span-2">
+      <div class="flex items-center gap-2 mb-2">
+        <h2 class="font-semibold text-lg">Logs</h2>
+        <div class="flex-1"></div>
+        <button id="btnClearLog" class="btn btn-ghost" type="button">Clear</button>
+      </div>
+      <pre id="log" class="bg-black/40 p-3 rounded-lg text-xs max-h-48 overflow-auto"></pre>
+    </section>
+  </main>
+
+  <!-- Settings Modal -->
+  <dialog id="settingsDlg" class="backdrop:bg-black/60 rounded-2xl p-0 w-[840px] max-w-[95vw]">
+    <form method="dialog" class="card p-4">
+      <div class="flex items-center gap-2 mb-3">
+        <h3 class="font-semibold text-lg">Settings</h3>
+        <div class="flex-1"></div>
+        <button class="btn" type="submit">Close</button>
+      </div>
+      <div class="grid grid-cols-2 gap-4 text-sm">
+        <label class="block">Use CORS Proxy
+          <select id="setProxy" class="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700">
+            <option value="on" selected>On (recommended for file:///)</option>
+            <option value="off">Off</option>
+          </select>
+        </label>
+        <label class="block">CORS Proxy Base
+          <input id="setProxyBase" class="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700" value="https://corsproxy.io/?" />
+        </label>
+        <label class="block">Ticker Speed (px/s)
+          <input id="setTickerSpeed" type="number" min="20" max="300" value="90" class="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700" />
+        </label>
+        <label class="block">Slide Duration (sec)
+          <input id="setSlideDur" type="number" min="3" max="60" value="8" class="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700" />
+        </label>
+        <label class="block">Brand Primary
+          <input id="setBrandPrimary" type="color" value="#0b1220" class="w-full h-10 border border-slate-700 rounded" />
+        </label>
+        <label class="block">Brand Secondary
+          <input id="setBrandSecondary" type="color" value="#e5e7eb" class="w-full h-10 border border-slate-700 rounded" />
+        </label>
+        <label class="block">Viewer Theme (export)
+          <select id="setViewerTheme" class="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700">
+            <option value="blue" selected>Blue (default)</option>
+            <option value="amber">Amber</option>
+            <option value="red">Red Alert</option>
+          </select>
+        </label>
+        <label class="block">Ticker Mode
+          <select id="setTickerMode" class="w-full px-3 py-2 rounded bg-slate-900 border border-slate-700">
+            <option value="always" selected>Always scroll</option>
+            <option value="pause_on_video">Pause while video slides play</option>
+          </select>
+        </label>
+        <label class="block">Video Overlay Opacity
+          <input id="setVideoOpacity" type="range" min="0.2" max="1" step="0.05" value="0.85" class="w-full" />
+        </label>
+      </div>
+      <div class="mt-3 text-xs text-slate-400">All settings & feeds persist to localStorage. This build has zero Google Apps Script calls and no auth tokens.</div>
+    </form>
+  </dialog>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    // ===== State =====
+    const state = {
+      feeds: load('feeds', [
+        {source_name:'Indiana Capital Chronicle', type:'rss', url:'https://indianacapitalchronicle.com/feed', enabled:true, category:'Indiana', notes:''},
+        {source_name:'News From The States (v1)', type:'json', url:'https://www.newsfromthestates.com/api/v1/articles', enabled:false, category:'States', notes:''}
+      ]),
+      items: [], // normalized tuner items
+      queues: { ticker: [], slides: [] },
+      settings: load('settings', {
+        proxy: 'on', proxyBase: 'https://corsproxy.io/?',
+        tickerSpeedPxPerSec: 90, slideDurationSec: 8,
+        brandPrimary: '#0b1220', brandSecondary: '#e5e7eb',
+        viewerTheme: 'blue',
+        tickerMode: 'always',
+        videoOpacity: 0.85
+      }),
+      presets: load('presets', []),
+      preview: { timer: null, index: 0 },
+      audioGate: false
+    };
+
+    // ===== DOM =====
+    const feedsBody = $('#feedsBody');
+    const editorList = $('#editorList');
+    const countItems = $('#countItems');
+    const searchInput = $('#searchInput');
+    const logEl = $('#log');
+    const settingsDlg = $('#settingsDlg');
+    const previewSlides = $('#previewSlides');
+    const previewLT = $('#previewLowerThird');
+    const tickerEl = $('#ticker');
+    const presetSelect = $('#presetSelect');
+
+    // ===== Utils =====
+    function $(q, root=document){ return root.querySelector(q); }
+    function $el(tag, cls){ const e = document.createElement(tag); if(cls) e.className = cls; return e; }
+    function save(k,v){ localStorage.setItem('ITT_'+k, JSON.stringify(v)); }
+    function load(k,def){ try{ return JSON.parse(localStorage.getItem('ITT_'+k)) ?? def }catch{ return def } }
+    function log(msg, level='info'){ const ts = new Date().toLocaleTimeString(); logEl.textContent += `[${ts}] ${level.toUpperCase()} — ${msg}\n`; logEl.scrollTop = logEl.scrollHeight; }
+
+    function prox(url){ return state.settings.proxy==='on' ? (state.settings.proxyBase + encodeURIComponent(url)) : url }
+
+    function sha256Sync(str){
+      // Simple sync hash substitute (not cryptographic). Good enough for IDs offline.
+      let h=0; for(let i=0;i<str.length;i++){ h = (h<<5)-h + str.charCodeAt(i); h|=0 }
+      return Math.abs(h).toString(16);
+    }
+
+    function normItem(o){
+      const nowIso = new Date().toISOString();
+      const url = o.url || o.link || '';
+      const title = (o.title||'').toString();
+      const summary = (o.summary||o.description||'').toString();
+      const image_url = o.image_url || o.image || o.enclosure_url || '';
+      const published_at = o.published_at || o.pubDate || o.date || nowIso;
+      const source = o.source || o.source_name || 'Feed';
+      const id = 'news_'+sha256Sync((url||title)+'|'+published_at);
+      return { id, url, source, title, summary, image_url,
+        video_url: o.video_url||'', video_autoplay: true, video_muted: true, video_loop: true,
+        audio_url: o.audio_url||'', audio_autoplay: false, audio_loop: true, audio_volume: 0.8,
+        published_at, enabled: true, weight: 10, template: 'headline' };
+    }
+
+    async function fetchRSS(url){
+      const res = await fetch(prox(url));
+      const text = await res.text();
+      const doc = new DOMParser().parseFromString(text, 'application/xml');
+      const items = [...doc.querySelectorAll('item')].map(it => {
+        const g = (q)=>it.querySelector(q)?.textContent?.trim()||'';
+        const desc = g('description');
+        const imgFromDesc = (()=>{ const m = desc.match(/<img[^>]+src=["']([^"']+)/i); return m?m[1]:'' })();
+        const media = it.querySelector('media\\:content, content')?.getAttribute('url') || it.querySelector('enclosure[type^="image/"]')?.getAttribute('url') || imgFromDesc;
+        return normItem({
+          title: g('title'),
+          summary: desc.replace(/<[^>]+>/g,'').slice(0,400),
+          url: g('link'),
+          published_at: g('pubDate'),
+          image_url: media,
+          source: (doc.querySelector('channel>title')?.textContent||'RSS')
+        });
+      });
+      return items;
+    }
+
+    async function fetchJSON(url){
+      const res = await fetch(prox(url));
+      const data = await res.json().catch(()=>({}));
+      const arr = deepFindArray(data) || [];
+      const items = arr.map(x => {
+        const title = x.title || x.headline || x.name || '';
+        const sum = x.summary || x.excerpt || x.description || x.abstract || '';
+        const link = x.url || x.link || x.canonical_url || x.share_url || '';
+        const img = x.image_url || x.featured_image_url || x.jetpack_featured_media_url || path(x,'yoast_head_json.og_image.0.url') || path(x,'featured_media.source_url') || path(x,'social_image.url') || '';
+        const pub = x.published_at || x.date_published || x.published || x.date || x.created_at || '';
+        const source = x.source || x.source_name || data.site?.name || 'JSON';
+        return normItem({ title, summary: sum, url: link, image_url: img, published_at: pub, source });
+      });
+      return items;
+
+      function path(obj, p){ try{ return p.split('.').reduce((o,k)=>o?.[k], obj) }catch{ return undefined } }
+      function deepFindArray(obj){
+        if(Array.isArray(obj)) return obj;
+        if(obj && typeof obj==='object'){
+          for(const k of Object.keys(obj)){
+            const v = obj[k];
+            const found = deepFindArray(v);
+            if(found && found.length) return found;
+          }
+        }
+        return null;
+      }
+    }
+
+    function renderFeeds(){
+      feedsBody.innerHTML = '';
+      state.feeds.forEach((f, idx) => {
+        const tr = $el('tr', 'border-t border-slate-800');
+        tr.append(tdInput('text', f.source_name, v=>f.source_name=v));
+        tr.append(tdSelect(['rss','json'], f.type, v=>f.type=v));
+        tr.append(tdInput('text', f.url, v=>f.url=v));
+        tr.append(tdCheckbox(f.enabled, v=>f.enabled=v));
+        tr.append(tdInput('text', f.category||'', v=>f.category=v));
+        const td = $el('td','p-2');
+        const del = $el('button','btn btn-ghost text-red-300 text-xs'); del.textContent='Delete';
+        del.addEventListener('click',()=>{ state.feeds.splice(idx,1); renderFeeds(); save('feeds',state.feeds) });
+        td.append(del); tr.append(td);
+        feedsBody.append(tr);
+      });
+    }
+    function tdInput(type, val, on){ const td=$el('td','p-2'); const i=$el('input','px-2 py-1 rounded bg-slate-900 border border-slate-700 w-full text-sm'); i.type=type; i.value=val??''; i.addEventListener('input',e=>on(e.target.value)); td.append(i); return td }
+    function tdSelect(opts, val, on){ const td=$el('td','p-2'); const s=$el('select','px-2 py-1 rounded bg-slate-900 border border-slate-700 w-full text-sm'); opts.forEach(o=>{const op=document.createElement('option'); op.value=o; op.textContent=o; if(o===val) op.selected=true; s.append(op)}); s.addEventListener('change',e=>on(e.target.value)); td.append(s); return td }
+    function tdCheckbox(val, on){ const td=$el('td','p-2'); const i=$el('input','w-5 h-5'); i.type='checkbox'; i.checked=!!val; i.addEventListener('change',e=>on(!!e.target.checked)); td.append(i); return td }
+
+    function renderEditor(){
+      const q = (searchInput.value||'').toLowerCase();
+      const list = state.items.filter(it => !q || it.title.toLowerCase().includes(q) || it.summary.toLowerCase().includes(q));
+      editorList.innerHTML = '';
+      countItems.textContent = list.length;
+      list.forEach(it => {
+        const row = $el('div','grid grid-cols-editor drag-row');
+        row.setAttribute('draggable','true');
+        row.dataset.id = it.id;
+        row.addEventListener('dragstart', onDragStart);
+        row.addEventListener('dragover', onDragOver);
+        row.addEventListener('dragleave', onDragLeave);
+        row.addEventListener('drop', onDrop);
+        // Title
+        const c1 = $el('div','p-2'); const t=$el('input','w-full px-2 py-1 rounded bg-slate-900 border border-slate-700'); t.value=it.title; t.addEventListener('input',e=>it.title=e.target.value); c1.append(t); row.append(c1);
+        // Summary
+        const c2 = $el('div','p-2'); const s=$el('textarea','w-full h-16 px-2 py-1 rounded bg-slate-900 border border-slate-700'); s.value=it.summary; s.addEventListener('input',e=>it.summary=e.target.value); c2.append(s); row.append(c2);
+        // Media
+        const c3 = $el('div','p-2 space-y-1');
+        const img=$el('input','w-full px-2 py-1 rounded bg-slate-900 border border-slate-700'); img.placeholder='image_url'; img.value=it.image_url; img.addEventListener('input',e=>it.image_url=e.target.value); c3.append(img);
+        const vid=$el('input','w-full px-2 py-1 rounded bg-slate-900 border border-slate-700'); vid.placeholder='video_url (mp4/YouTube/etc)'; vid.value=it.video_url; vid.addEventListener('input',e=>it.video_url=e.target.value); c3.append(vid);
+        const vrow=$el('div','flex gap-2 items-center text-xs text-slate-300');
+        vrow.append(makeCheck('autoplay', it.video_autoplay, v=>it.video_autoplay=v));
+        vrow.append(makeCheck('muted', it.video_muted, v=>it.video_muted=v));
+        vrow.append(makeCheck('loop', it.video_loop, v=>it.video_loop=v));
+        c3.append(vrow);
+        const aud=$el('input','w-full px-2 py-1 rounded bg-slate-900 border border-slate-700'); aud.placeholder='audio_url (mp3/ogg)'; aud.value=it.audio_url; aud.addEventListener('input',e=>it.audio_url=e.target.value); c3.append(aud);
+        const arow=$el('div','flex gap-2 items-center text-xs text-slate-300');
+        arow.append(makeCheck('audio autoplay', it.audio_autoplay, v=>it.audio_autoplay=v));
+        arow.append(makeCheck('audio loop', it.audio_loop, v=>it.audio_loop=v));
+        const vol=$el('input',''); vol.type='range'; vol.min='0'; vol.max='1'; vol.step='0.05'; vol.value=String(it.audio_volume); vol.title='audio volume'; vol.addEventListener('input',e=>it.audio_volume=Number(e.target.value)); arow.append(vol);
+        c3.append(arow);
+        row.append(c3);
+        // Weight
+        const c4 = $el('div','p-2'); const w=$el('input','w-20 px-2 py-1 rounded bg-slate-900 border border-slate-700'); w.type='number'; w.min='0'; w.max='100'; w.value=it.weight; w.addEventListener('input',e=>it.weight=Number(e.target.value||0)); c4.append(w); row.append(c4);
+        // Enable
+        const c5 = $el('div','p-2'); const en=$el('input','w-5 h-5'); en.type='checkbox'; en.checked=!!it.enabled; en.addEventListener('change',e=>it.enabled=!!e.target.checked); c5.append(en); row.append(c5);
+        // Template
+        const c6 = $el('div','p-2'); const sel=$el('select','px-2 py-1 rounded bg-slate-900 border border-slate-700'); ['headline','image_left','full_image','text_only'].forEach(tp=>{const o=document.createElement('option'); o.value=tp; o.textContent=tp; if(it.template===tp) o.selected=true; sel.append(o)}); sel.addEventListener('change',e=>it.template=e.target.value); c6.append(sel); row.append(c6);
+        // Drag handle
+        const c7 = $el('div','p-2 text-slate-400 select-none'); c7.textContent='↕'; row.append(c7);
+
+        editorList.append(row);
+      });
+    }
+
+    function makeCheck(lbl, init, on){ const wrap=$el('label','inline-flex items-center gap-1'); const i=$el('input',''); i.type='checkbox'; i.checked=!!init; i.addEventListener('change',e=>on(!!e.target.checked)); const span=$el('span',''); span.textContent=lbl; wrap.append(i, span); return wrap }
+
+    // Drag-and-drop handlers
+    let dragId=null;
+    function onDragStart(e){ dragId = e.currentTarget.dataset.id; e.dataTransfer.setData('text/plain', dragId); e.dataTransfer.effectAllowed='move'; }
+    function onDragOver(e){ e.preventDefault(); e.currentTarget.classList.add('drag-over'); }
+    function onDragLeave(e){ e.currentTarget.classList.remove('drag-over'); }
+    function onDrop(e){ e.preventDefault(); const targetId = e.currentTarget.dataset.id; e.currentTarget.classList.remove('drag-over'); if(!dragId||dragId===targetId) return; const from = state.items.findIndex(x=>x.id===dragId); const to = state.items.findIndex(x=>x.id===targetId); if(from<0||to<0) return; const [m] = state.items.splice(from,1); state.items.splice(to,0,m); save('items',state.items); renderEditor(); log(`Reordered: ${m.title}`); }
+
+    // ===== Build Queues =====
+    function buildQueues(){
+      const enabled = state.items.filter(i=>i.enabled);
+      // Ticker: simple format Title — Source (category optional)
+      const ticker = enabled.map(i=>({ id:i.id, text:`${i.title}`.trim(), source:i.source || '', weight:i.weight||10 })).slice(0,400);
+      // Slides include media + template + audio controls
+      const slides = enabled.map(i=>({ id:i.id, title:i.title, subtitle:i.summary, image_url:i.image_url,
+        video_url:i.video_url, video_autoplay:i.video_autoplay, video_muted:i.video_muted, video_loop:i.video_loop,
+        audio_url:i.audio_url, audio_autoplay:i.audio_autoplay, audio_loop:i.audio_loop, audio_volume:i.audio_volume,
+        template:i.template, source:i.source, url:i.url, weight:i.weight||10 })).slice(0,400);
+      state.queues = { ticker, slides };
+      log(`Built queues: ticker=${ticker.length}, slides=${slides.length}`);
+      save('queues', state.queues);
+      renderPreview();
+      renderTicker();
+    }
+
+    // ===== Preview =====
+    function renderPreview(){
+      // slides
+      previewSlides.innerHTML = '';
+      state.queues.slides.forEach((s, idx) => {
+        const slide = $el('div','slide');
+        const wrap = $el('div','w-full h-full relative');
+        // background (image or solid)
+        if(s.image_url){
+          const img = new Image(); img.alt=''; img.referrerPolicy='no-referrer'; img.src = s.image_url; img.className='absolute inset-0 w-full h-full object-cover';
+          wrap.append(img);
+          const shade = $el('div','absolute inset-0 bg-black/35'); wrap.append(shade);
+        } else {
+          wrap.style.background = 'linear-gradient(180deg,#0b1220,#0a1832)';
+        }
+        // content container
+        const c = $el('div','absolute inset-0 p-16 flex flex-col');
+        const h = $el('div','text-5xl font-extrabold drop-shadow-lg'); h.textContent = s.title || '—'; c.append(h);
+        if(s.subtitle){ const sub = $el('div','mt-4 text-2xl max-w-5xl opacity-90'); sub.textContent = s.subtitle; c.append(sub) }
+        // template-specific tweaks
+        if(s.template==='image_left' && s.image_url){ c.className += ' md:grid md:grid-cols-2 md:gap-6'; h.className='text-5xl font-extrabold'; }
+        if(s.template==='text_only'){ wrap.style.background='linear-gradient(180deg,#001b3f,#0b1220)'; }
+
+        // optional video layer (opacity so image remains faintly visible under it)
+        if(s.video_url){
+          const v = document.createElement('video');
+          v.src = s.video_url; v.playsInline = true; v.autoplay = !!s.video_autoplay; v.muted = !!s.video_muted; v.loop = !!s.video_loop; v.controls = false;
+          v.className = 'absolute inset-0 w-full h-full object-cover';
+          v.style.opacity = String(state.settings.videoOpacity ?? 0.85);
+          wrap.append(v);
+        }
+        // optional audio layer
+        if(s.audio_url){
+          const a = document.createElement('audio'); a.src = s.audio_url; a.loop = !!s.audio_loop; a.autoplay = !!s.audio_autoplay && state.audioGate; a.volume = Number(s.audio_volume ?? 0.8); a.dataset.role='slide-audio'; wrap.append(a);
+        }
+
+        wrap.append(c);
+        slide.append(wrap);
+        if(idx===0) slide.classList.add('active');
+        previewSlides.append(slide);
+      });
+      // lower third applied from current controls
+      applyLowerThird();
+    }
+
+    function renderTicker(){
+      tickerEl.innerHTML = '';
+      const run = $el('div','ticker-run'); run.setAttribute('aria-hidden','true');
+      state.queues.ticker.forEach((t,i)=>{ const span=$el('span'); span.textContent = (i? '  •  ' : '') + t.text; run.append(span); });
+      const rail = $el('div'); rail.append(run.cloneNode(true)); rail.append(run);
+      rail.id = 'tickerRail';
+      tickerEl.append(rail);
+      const speed = Number(state.settings.tickerSpeedPxPerSec||90);
+      const total = rail.scrollWidth/2; // half because duplicated
+      const dur = total / (speed || 90); // seconds
+      rail.style.display='inline-block';
+      rail.style.animation = `scrollX ${Math.max(5,dur)}s linear infinite`;
+    }
+
+    function startPreview(){
+      stopPreview();
+      const slides = [...previewSlides.children];
+      if(!slides.length) return;
+      let idx = 0;
+      state.preview.index = 0;
+      slides.forEach(s=>s.classList.remove('active'));
+      slides[0].classList.add('active');
+      state.preview.timer = setInterval(()=>{
+        slides[idx].classList.remove('active');
+        idx = (idx+1) % slides.length;
+        slides[idx].classList.add('active');
+        // pause ticker if mode = pause_on_video and slide has a video
+        const hasVideo = !!slides[idx].querySelector('video');
+        const rail = document.getElementById('tickerRail');
+        if(rail){ rail.style.animationPlayState = (state.settings.tickerMode==='pause_on_video' && hasVideo) ? 'paused' : 'running'; }
+      }, (Number(state.settings.slideDurationSec)||8)*1000);
+      log('Preview started');
+    }
+    function stopPreview(){ if(state.preview.timer){ clearInterval(state.preview.timer); state.preview.timer=null; log('Preview stopped') } }
+
+    // ===== Lower Third =====
+    function applyLowerThird(){
+      const title = $('#ltTitle').value || '';
+      const sub = $('#ltSub').value || '';
+      const bg = $('#ltBg').value || '#001b3f';
+      const accent = $('#ltAccent').value || '#1f6feb';
+      const color = $('#ltColor').value || '#e5e7eb';
+      const op = Number($('#ltOpacity').value||92)/100;
+      previewLT.innerHTML = '';
+      const box = $el('div','lt-box');
+      box.style.background = bg; box.style.opacity = op;
+      box.style.borderTop = `6px solid ${accent}`;
+      const t = $el('div','lt-title'); t.style.color = color; t.textContent = title; box.append(t);
+      if(sub){ const s=$el('div','lt-sub'); s.style.color=color; s.textContent=sub; box.append(s) }
+      previewLT.append(box);
+    }
+
+    // ===== Presets (Template Manager) =====
+    function refreshPresetSelect(){
+      presetSelect.innerHTML = '';
+      state.presets.forEach((p, i)=>{
+        const o=document.createElement('option'); o.value=String(i); o.textContent=p.name; presetSelect.append(o);
+      });
+    }
+
+    $('#btnSavePreset').addEventListener('click', ()=>{
+      const name = ($('#presetName').value||'').trim();
+      if(!name){ log('Preset name required','warn'); return }
+      // capture current lower-third + defaults for slides
+      const preset = {
+        name,
+        templateDefault: 'headline',
+        lowerThird: {
+          title: $('#ltTitle').value, subtitle: $('#ltSub').value,
+          bg: $('#ltBg').value, accent: $('#ltAccent').value,
+          color: $('#ltColor').value, opacity: Number($('#ltOpacity').value)/100
+        }
+      };
+      state.presets.push(preset); save('presets',state.presets); refreshPresetSelect(); log(`Preset saved: ${name}`);
+    });
+
+    $('#btnApplyPresetAll').addEventListener('click', ()=>{
+      const idx = Number(presetSelect.value);
+      if(Number.isNaN(idx) || !state.presets[idx]){ log('Select a preset first','warn'); return }
+      const p = state.presets[idx];
+      state.items.forEach(it=>{ it.template = p.templateDefault || it.template });
+      // apply LT
+      $('#ltTitle').value = p.lowerThird.title||'';
+      $('#ltSub').value = p.lowerThird.subtitle||'';
+      $('#ltBg').value = p.lowerThird.bg||'#001b3f';
+      $('#ltAccent').value = p.lowerThird.accent||'#1f6feb';
+      $('#ltColor').value = p.lowerThird.color||'#e5e7eb';
+      $('#ltOpacity').value = String(Math.round((p.lowerThird.opacity??0.92)*100));
+      applyLowerThird();
+      renderEditor();
+      save('items',state.items);
+      log(`Preset applied to visible items`);
+    });
+
+    // ===== Export Slides HTML (self-contained viewer with themes) =====
+    function exportSlidesHTML(){
+      const html = makeSlidesHTML({
+        slides: state.queues.slides,
+        settings: {
+          titleMode: 'one',
+          ticker: state.queues.ticker,
+          tickerSpeedPxPerSec: state.settings.tickerSpeedPxPerSec,
+          slideDurationSec: state.settings.slideDurationSec,
+          theme: state.settings.viewerTheme,
+          tickerMode: state.settings.tickerMode,
+          videoOpacity: state.settings.videoOpacity,
+          lowerThird: {
+            title: $('#ltTitle').value, subtitle: $('#ltSub').value,
+            bg: $('#ltBg').value, accent: $('#ltAccent').value,
+            color: $('#ltColor').value, opacity: Number($('#ltOpacity').value)/100
+          }
+        }
+      });
+      const blob = new Blob([html], {type:'text/html'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'ITT_Slides_Viewer.html';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      log('Exported OBS-ready slideshow HTML');
+    }
+
+    function makeSlidesHTML(stateObj){
+      const slides = Array.isArray(stateObj?.slides)? stateObj.slides : [];
+      const set = stateObj?.settings||{};
+      const ticker = Array.isArray(set.ticker)? set.ticker : [];
+      const dur = Number(set.slideDurationSec||8);
+      const speed = Number(set.tickerSpeedPxPerSec||90);
+      const lt = set.lowerThird||{};
+      const theme = set.theme||'blue';
+      const tickerMode = set.tickerMode||'always';
+      const videoOpacity = Number(set.videoOpacity ?? 0.85);
+      const titleMode = String(set.titleMode || 'one');
+      const viewerTitle = String(set.viewerTitle || 'ITT Slides Viewer');
+      const esc = (s)=> String(s??'').replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+      const body = slides.map((s,i)=>{
+        const videoTag = s.video_url ? `<video src="${esc(s.video_url)}" class="absolute inset-0 w-full h-full object-cover" style="opacity:${videoOpacity}" playsinline ${s.video_autoplay?'autoplay':''} ${s.video_muted?'muted':''} ${s.video_loop?'loop':''}></video>` : '';
+        const audioTag = s.audio_url ? `<audio src="${esc(s.audio_url)}" ${s.audio_loop?'loop':''} ${s.audio_autoplay?'autoplay':''} data-role="slide-audio"></audio>` : '';
+        const hasVideo = Boolean(s.video_url);
+        const contentClasses = ['absolute inset-0 p-16 flex flex-col'];
+        if(s.template==='image_left' && s.image_url){ contentClasses.push('md:grid','md:grid-cols-2','md:gap-6'); }
+        if(s.template==='text_only' && !s.image_url){
+          // ensure a background even if no image
+        }
+        const titleClass = 'text-5xl font-extrabold drop-shadow-lg';
+        const subtitleBlock = s.subtitle ? `<div class="mt-4 text-2xl max-w-5xl opacity-90">${esc(s.subtitle)}</div>` : '';
+        const bgLayer = s.image_url ? `<img src="${esc(s.image_url)}" alt="" class="absolute inset-0 w-full h-full object-cover" referrerpolicy="no-referrer"/><div class="absolute inset-0" style="background:rgba(0,0,0,.35)"></div>` : `<div class="absolute inset-0" style="background:linear-gradient(180deg,#0b1220,#0a1832)"></div>`;
+        return `<div class="slide${i===0?' active':''}" data-has-video="${hasVideo}">
+  <div class="w-full h-full relative">
+    ${bgLayer}
+    ${videoTag}
+    ${audioTag}
+    <div class="${contentClasses.join(' ')}">
+      <div class="${titleClass} slide-title">${esc(s.title||'')}</div>
+      ${subtitleBlock}
+    </div>
+  </div>
+</div>`;
+      }).join('\n');
+      const tickerText = ticker.map((t,i)=> (i?'  •  ':'') + (t.text||'')).join('');
+      const tickerEncoded = JSON.stringify(tickerText);
+      const themeEncoded = JSON.stringify(theme);
+      const tickerModeEncoded = JSON.stringify(tickerMode);
+      const titleModeEncoded = JSON.stringify(titleMode);
+      const viewerTitleEncoded = JSON.stringify(viewerTitle);
+      return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${esc(viewerTitle)}</title>
+<script>window.tailwind={config:{darkMode:'class'}};<\/script>
+<script src="https://cdn.tailwindcss.com"><\/script>
+<style>
+:root{--c1:#0b1220;--c2:#0a1832;--acc:#1f6feb}
+:root.theme-amber{--c1:#1a1305;--c2:#2b1a06;--acc:#f59e0b}
+:root.theme-red{--c1:#2a0c0c;--c2:#3a0f0f;--acc:#ef4444}
+html,body,#root{height:100%}body{background:var(--c1);color:#e5e7eb}
+.slide{position:absolute;inset:0;opacity:0;transition:opacity .6s ease}
+.slide.active{opacity:1}
+@keyframes scrollX{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.ticker-rail{white-space:nowrap}
+.ticker-run{display:inline-block;padding-right:6rem}
+.lt{position:absolute;left:0;right:0;bottom:0;height:220px;padding:16px}
+.lt-box{position:relative;border-radius:16px;padding:16px 20px;border-top:6px solid ${esc(lt.accent||'#1f6feb')};background:${esc(lt.bg||'#001b3f')};opacity:${Number(lt.opacity??0.9)}}
+.lt-title{font-weight:800;font-size:40px;line-height:1.1;color:${esc(lt.color||'#e5e7eb')}}
+.lt-sub{font-size:22px;opacity:.9;color:${esc(lt.color||'#e5e7eb')}}
+</style>
+</head>
+<body>
+<div id="root" class="w-[1920px] h-[1080px] mx-auto relative">
+  <div id="slides" class="w-full h-full relative">${body}</div>
+  <div class="lt"><div class="lt-box"><div class="lt-title">${esc(lt.title||'')}</div>${lt.subtitle?`<div class=\"lt-sub\">${esc(lt.subtitle)}<\/div>`:''}</div></div>
+  <div class="absolute left-0 right-0 bottom-0">
+    <div class="bg-slate-900/90 border-t border-slate-700 overflow-hidden">
+      <div id="ticker" class="ticker-rail text-slate-100 text-2xl py-2"></div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const slides=[...document.querySelectorAll('.slide')];
+  let idx=0; if(slides[0]) slides[0].classList.add('active');
+  const rail=document.getElementById('ticker');
+  const run=document.createElement('div'); run.className='ticker-run'; run.textContent=${tickerEncoded};
+  rail.append(run.cloneNode(true)); rail.append(run);
+  rail.id='tickerRail';
+  const speed=${speed};
+  const setAnim=()=>{ const total=rail.scrollWidth/2; const dur= total/(speed||90); rail.style.display='inline-block'; rail.style.animation= 'scrollX '+Math.max(5,dur)+'s linear infinite'; };
+  requestAnimationFrame(setAnim);
+  const qp=new URLSearchParams(location.search);
+  const themeQP=qp.get('theme')||${themeEncoded};
+  const tickerModeQP=qp.get('ticker')||${tickerModeEncoded};
+  const titleModeQP=qp.get('title')||${titleModeEncoded};
+  const defaultDocTitle=${viewerTitleEncoded};
+  let initialTitleApplied=false;
+  const applyDocTitle=()=>{
+    if(!slides.length) return;
+    const activeSlide=slides[idx];
+    if(titleModeQP==='cycle'){
+      const headline=activeSlide?.querySelector('.slide-title')?.textContent?.trim();
+      document.title = headline || defaultDocTitle;
+      return;
+    }
+    if(!initialTitleApplied){
+      const firstTitle=slides[0]?.querySelector('.slide-title')?.textContent?.trim();
+      document.title = firstTitle || defaultDocTitle;
+      initialTitleApplied=true;
+    }
+  };
+  applyDocTitle();
+  const rt=document.documentElement; rt.classList.remove('theme-amber','theme-red'); if(themeQP==='amber') rt.classList.add('theme-amber'); if(themeQP==='red') rt.classList.add('theme-red');
+  setInterval(()=>{ if(!slides.length) return; slides[idx].classList.remove('active'); idx=(idx+1)%slides.length; slides[idx].classList.add('active'); applyDocTitle(); const hasVideo = slides[idx].dataset.hasVideo==='true'; const r=document.getElementById('tickerRail'); if(r){ r.style.animationPlayState = (tickerModeQP==='pause_on_video' && hasVideo) ? 'paused' : 'running'; } }, ${dur}*1000);
+  document.addEventListener('keydown', (e)=>{ if(e.key.toLowerCase()==='t'){ const order=['blue','amber','red']; let i=order.indexOf(themeQP); i=(i+1+order.length)%order.length; const params=new URLSearchParams(location.search); params.set('theme', order[i]); location.search='?'+params.toString(); } });
+})();
+<\/script>
+</body>
+</html>`;
+    }
+
+    window.makeSlidesHTML = makeSlidesHTML;
+
+    // ===== Event Handlers =====
+    $('#btnAddFeed').addEventListener('click', ()=>{ state.feeds.push({source_name:'New Feed', type:'rss', url:'', enabled:true, category:'', notes:''}); renderFeeds(); save('feeds',state.feeds) });
+    $('#btnSaveFeeds').addEventListener('click', ()=>{ save('feeds',state.feeds); log('Feeds saved') });
+
+    $('#btnFetchAll').addEventListener('click', async ()=>{
+      const enabled = state.feeds.filter(f=>f.enabled && f.url);
+      if(!enabled.length){ log('No enabled feeds to fetch','warn'); return }
+      log(`Fetching ${enabled.length} feed(s)…`);
+      let all=[]; for(const f of enabled){
+        try{
+          const got = f.type==='rss' ? await fetchRSS(f.url) : await fetchJSON(f.url);
+          // annotate source/category
+          got.forEach(it=>{ it.source=f.source_name||it.source; if(f.category) it.category=f.category });
+          log(`Fetched ${got.length} from ${f.source_name}`);
+          all = all.concat(got);
+        }catch(err){ log(`Feed error ${f.source_name}: ${err}`, 'error') }
+      }
+      // dedupe by id, prefer latest
+      const map = new Map();
+      all.forEach(it=>map.set(it.id, it));
+      state.items = [...map.values()];
+      renderEditor(); save('items', state.items);
+      log(`Ready: ${state.items.length} curated items`);
+    });
+
+    // Wire up remaining actions
+    $('#btnBuildQueues').addEventListener('click', buildQueues);
+    $('#btnExportSlides').addEventListener('click', exportSlidesHTML);
+
+    $('#btnPreviewStart').addEventListener('click', startPreview);
+    $('#btnPreviewStop').addEventListener('click', stopPreview);
+    $('#btnEnableAudio').addEventListener('click', ()=>{
+      state.audioGate = true;
+      // Attempt to start any existing slide audio elements
+      previewSlides.querySelectorAll('audio[data-role="slide-audio"]').forEach(a=>{ try{ a.play().catch(()=>{}) }catch{} });
+      log('Audio enabled');
+    });
+
+    $('#btnSettings').addEventListener('click', ()=>{
+      $('#setProxy').value = state.settings.proxy;
+      $('#setProxyBase').value = state.settings.proxyBase;
+      $('#setTickerSpeed').value = state.settings.tickerSpeedPxPerSec;
+      $('#setSlideDur').value = state.settings.slideDurationSec;
+      $('#setBrandPrimary').value = state.settings.brandPrimary;
+      $('#setBrandSecondary').value = state.settings.brandSecondary;
+      $('#setViewerTheme').value = state.settings.viewerTheme||'blue';
+      $('#setTickerMode').value = state.settings.tickerMode||'always';
+      $('#setVideoOpacity').value = String(state.settings.videoOpacity ?? 0.85);
+      settingsDlg.showModal();
+    });
+
+    // Settings change handlers
+    function setSetting(key,val){ state.settings[key]=val; save('settings', state.settings); }
+    $('#setProxy').addEventListener('change', e=>{ setSetting('proxy', e.target.value); });
+    $('#setProxyBase').addEventListener('input', e=>{ setSetting('proxyBase', e.target.value); });
+    $('#setTickerSpeed').addEventListener('input', e=>{ setSetting('tickerSpeedPxPerSec', Number(e.target.value||90)); renderTicker(); });
+    $('#setSlideDur').addEventListener('input', e=>{ setSetting('slideDurationSec', Number(e.target.value||8)); });
+    $('#setBrandPrimary').addEventListener('input', e=>{ setSetting('brandPrimary', e.target.value); });
+    $('#setBrandSecondary').addEventListener('input', e=>{ setSetting('brandSecondary', e.target.value); });
+    $('#setViewerTheme').addEventListener('change', e=>{ setSetting('viewerTheme', e.target.value); });
+    $('#setTickerMode').addEventListener('change', e=>{ setSetting('tickerMode', e.target.value); });
+    $('#setVideoOpacity').addEventListener('input', e=>{ const val=Number(e.target.value); setSetting('videoOpacity', val); renderPreview(); });
+
+    $('#btnApplyLT').addEventListener('click', ()=>{ applyLowerThird(); log('Lower third applied') });
+    $('#btnClearLog').addEventListener('click', ()=>{ logEl.textContent=''; });
+
+    searchInput.addEventListener('input', renderEditor);
+
+    // ===== Init =====
+    const persistedItems = load('items', []);
+    if(persistedItems.length){ state.items = persistedItems }
+    const persistedQueues = load('queues', {ticker:[],slides:[]});
+    if(persistedQueues.ticker||persistedQueues.slides) state.queues = persistedQueues;
+    const persistedPresets = load('presets', []); if(persistedPresets.length) state.presets = persistedPresets; refreshPresetSelect();
+
+    renderFeeds();
+    renderEditor();
+    renderPreview();
+    renderTicker();
+
+    // ===== Self-tests =====
+    runSelfTests();
+  });
+
+  function runSelfTests(){
+    try{
+      const sample = {slides:[{title:'T1',subtitle:'S1',image_url:'',video_url:'',template:'text_only'}], settings:{slideDurationSec:5,tickerSpeedPxPerSec:100,lowerThird:{title:'LT',subtitle:'Sub',bg:'#001b3f',accent:'#1f6feb',color:'#fff',opacity:.9}}};
+      const out = (window.makeSlidesHTML||function(){return ''}).call(window, sample);
+      const passDoc = typeof out==='string' && out.startsWith('<!DOCTYPE html>');
+      _report(passDoc, 'makeSlidesHTML returns a full HTML document string');
+    }catch(e){ _report(false, 'makeSlidesHTML basic generation threw: '+e.message); }
+
+    try{
+      const a={id:'a'}, b={id:'b'}, c={id:'c'}; const arr=[a,b,c];
+      const from=0,to=2; const [m]=arr.splice(from,1); arr.splice(to,0,m);
+      const pass = arr[2]===a && arr.length===3;
+      _report(pass, 'Drag-and-drop reorder logic (splice) works');
+    }catch(e){ _report(false, 'DnD test threw: '+e.message); }
+
+    try{
+      const esc = (s)=> String(s??'').replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+      const dangerous = '<img src=x onerror=alert(1)>'; const safe = esc(dangerous);
+      const pass = !/onerror/.test(safe) && safe.includes('&lt;img');
+      _report(pass, 'Escaper removes raw HTML from strings');
+    }catch(e){ _report(false, 'Escaper test threw: '+e.message); }
+  }
+  function _report(ok, msg){ const pre=document.getElementById('log'); const line=document.createElement('div'); line.className= ok? 'test-pass' : 'test-fail'; line.textContent=(ok?'PASS: ':'FAIL: ')+msg; pre.append(line); }
+</script>
+</body>
+</html>
