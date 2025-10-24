@@ -624,6 +624,8 @@
       const theme = set.theme||'blue';
       const tickerMode = set.tickerMode||'always';
       const videoOpacity = Number(set.videoOpacity ?? 0.85);
+      const titleMode = String(set.titleMode || 'one');
+      const viewerTitle = String(set.viewerTitle || 'ITT Slides Viewer');
       const esc = (s)=> String(s??'').replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
       const body = slides.map((s,i)=>{
         const videoTag = s.video_url ? `<video src="${esc(s.video_url)}" class="absolute inset-0 w-full h-full object-cover" style="opacity:${videoOpacity}" playsinline ${s.video_autoplay?'autoplay':''} ${s.video_muted?'muted':''} ${s.video_loop?'loop':''}></video>` : '';
@@ -643,7 +645,7 @@
     ${videoTag}
     ${audioTag}
     <div class="${contentClasses.join(' ')}">
-      <div class="${titleClass}">${esc(s.title||'')}</div>
+      <div class="${titleClass} slide-title">${esc(s.title||'')}</div>
       ${subtitleBlock}
     </div>
   </div>
@@ -653,9 +655,11 @@
       const tickerEncoded = JSON.stringify(tickerText);
       const themeEncoded = JSON.stringify(theme);
       const tickerModeEncoded = JSON.stringify(tickerMode);
+      const titleModeEncoded = JSON.stringify(titleMode);
+      const viewerTitleEncoded = JSON.stringify(viewerTitle);
       return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>ITT Slides Viewer</title>
+<title>${esc(viewerTitle)}</title>
 <script>window.tailwind={config:{darkMode:'class'}};<\/script>
 <script src="https://cdn.tailwindcss.com"><\/script>
 <style>
@@ -698,8 +702,26 @@ html,body,#root{height:100%}body{background:var(--c1);color:#e5e7eb}
   const qp=new URLSearchParams(location.search);
   const themeQP=qp.get('theme')||${themeEncoded};
   const tickerModeQP=qp.get('ticker')||${tickerModeEncoded};
+  const titleModeQP=qp.get('title')||${titleModeEncoded};
+  const defaultDocTitle=${viewerTitleEncoded};
+  let initialTitleApplied=false;
+  const applyDocTitle=()=>{
+    if(!slides.length) return;
+    const activeSlide=slides[idx];
+    if(titleModeQP==='cycle'){
+      const headline=activeSlide?.querySelector('.slide-title')?.textContent?.trim();
+      document.title = headline || defaultDocTitle;
+      return;
+    }
+    if(!initialTitleApplied){
+      const firstTitle=slides[0]?.querySelector('.slide-title')?.textContent?.trim();
+      document.title = firstTitle || defaultDocTitle;
+      initialTitleApplied=true;
+    }
+  };
+  applyDocTitle();
   const rt=document.documentElement; rt.classList.remove('theme-amber','theme-red'); if(themeQP==='amber') rt.classList.add('theme-amber'); if(themeQP==='red') rt.classList.add('theme-red');
-  setInterval(()=>{ if(!slides.length) return; slides[idx].classList.remove('active'); idx=(idx+1)%slides.length; slides[idx].classList.add('active'); const hasVideo = slides[idx].dataset.hasVideo==='true'; const r=document.getElementById('tickerRail'); if(r){ r.style.animationPlayState = (tickerModeQP==='pause_on_video' && hasVideo) ? 'paused' : 'running'; } }, ${dur}*1000);
+  setInterval(()=>{ if(!slides.length) return; slides[idx].classList.remove('active'); idx=(idx+1)%slides.length; slides[idx].classList.add('active'); applyDocTitle(); const hasVideo = slides[idx].dataset.hasVideo==='true'; const r=document.getElementById('tickerRail'); if(r){ r.style.animationPlayState = (tickerModeQP==='pause_on_video' && hasVideo) ? 'paused' : 'running'; } }, ${dur}*1000);
   document.addEventListener('keydown', (e)=>{ if(e.key.toLowerCase()==='t'){ const order=['blue','amber','red']; let i=order.indexOf(themeQP); i=(i+1+order.length)%order.length; const params=new URLSearchParams(location.search); params.set('theme', order[i]); location.search='?'+params.toString(); } });
 })();
 <\/script>
